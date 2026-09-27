@@ -6,6 +6,7 @@
 <meta name="robots" content="noindex">
 <title>Espace dentiste · Dr Yasmine</title>
 <meta name="theme-color" content="#FCF1EE">
+<meta name="color-scheme" content="light only">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦷</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -46,7 +47,7 @@
     </div>
     <div class="tabs" role="tablist">
       <button role="tab" aria-selected="true" data-tab="tRdv">Rendez-vous</button>
-      <button role="tab" aria-selected="false" data-tab="tPat">Patients</button>
+      <button role="tab" aria-selected="false" data-tab="tPat">Clients</button>
       <button role="tab" aria-selected="false" data-tab="tSet">Réglages</button>
     </div>
 
@@ -59,7 +60,16 @@
     </div>
 
     <div id="tPat" class="tab" hidden>
-      <div class="bar"><input class="inp" id="patSearch" placeholder="Chercher un nom ou un numéro" style="flex:1;min-width:200px"></div>
+      <div class="bar">
+        <input class="inp" id="patSearch" placeholder="Chercher un nom ou un numéro" style="flex:1;min-width:200px">
+        <select class="inp" id="patSort" aria-label="Trier les clients">
+          <option value="az">De A à Z</option>
+          <option value="next">Prochain rendez-vous</option>
+          <option value="recent">Dernière visite</option>
+          <option value="stamps">Le plus de tampons</option>
+        </select>
+      </div>
+      <p class="note" id="patCount" style="margin:0 0 10px"></p>
       <div class="list" id="patList"></div>
     </div>
 
@@ -109,9 +119,10 @@
 <script src="config.js"></script>
 <script src="shared.js"></script>
 <script>
-let S = DEFAULT_SETTINGS, APPTS = [], PATS = {}, filter = 'today', channel = null;
+let S = DEFAULT_SETTINGS, APPTS = [], PATS = {}, filter = 'today', channel = null, openClient = null;
 const ST = {pending:['À confirmer','t-pending'],confirmed:['Confirmé','t-confirmed'],done:['Séance faite','t-done'],cancelled:['Annulé','t-cancelled']};
 const FILTERS = [['today',"Aujourd'hui"],['pending','À confirmer'],['upcoming','À venir'],['past','Passés'],['all','Tous']];
+const key = a => a.date + ' ' + a.time;
 
 /* ---------- auth ---------- */
 $('#loginLogo').innerHTML = logoSVG();
@@ -126,7 +137,7 @@ $('#logout').addEventListener('click', async ()=>{ await sb.auth.signOut(); });
 
 let started = false;
 sb.auth.onAuthStateChange((evt, session)=>{
-  // defer: supabase calls must not run inside this callback
+  // deferred: supabase calls must not run inside this callback
   setTimeout(()=>{
     if(session && !started){ started = true; start(); }
     else if(!session){ started = false; showLogin(); }
@@ -147,26 +158,41 @@ async function start(){
   $('#login').hidden = true; $('#dash').hidden = false;
   await loadAll();
   if(!channel){
-    channel = sb.channel('rdv')
-      .on('postgres_changes', {event:'*', schema:'public', table:'appointments'}, async payload=>{
-        if(payload.eventType==='INSERT' && payload.new.status==='pending')
-          toast(`Nouveau rendez-vous : ${payload.new.name}, ${fmtShort(payload.new.date)} à ${hh(payload.new.time)}`);
-        await loadAll();
-      }).subscribe();
+    channel = sb.channel('live')
+      .on('postgres_changes', {event:'*', schema:'public', table:'appointments'}, payload=>{
+        if(payload.eventType==='DELETE'){ APPTS = APPTS.filter(a=>a.id!==payload.old.id); }
+        else {
+          const a = payload.new, i = APPTS.findIndex(x=>x.id===a.id);
+          if(i>=0) APPTS[i] = a; else {
+            APPTS.push(a);
+            if(!PATS[a.phone]) PATS[a.phone] = {phone:a.phone, name:a.name, stamps:0, cards:0};
+            if(a.status==='pending') toast(`Nouveau rendez-vous : ${a.name}, ${fmtShort(a.date)} à ${hh(a.time)}`);
+          }
+        }
+        refresh();
+      })
+      .subscribe();
   }
 }
 
 /* ---------- data ---------- */
+async function fetchAll(table){
+  // Supabase returns max 1000 rows per request, so read page by page
+  let out = [], from = 0;
+  for(;;){
+    const { data, error } = await sb.from(table).select('*').range(from, from + 999);
+    if(error) throw error;
+    out = out.concat(data);
+    if(data.length < 1000) return out;
+    from += 1000;
+  }
+}
 async function loadAll(){
-  const since = iso(new Date(Date.now() - 1000*60*60*24*120));
-  const [a, p, s] = await Promise.all([
-    sb.from('appointments').select('*').gte('date', since).order('date').order('time'),
-    sb.from('patients').select('*'),
-    loadSettings()
-  ]);
-  if(a.error || p.error){ toast('Impossible de charger les données. Vérifiez la connexion.'); return; }
-  APPTS = a.data; PATS = Object.fromEntries(p.data.map(x=>[x.phone, x])); S = s;
-  render();
+  try{
+    const [a, p, s] = await Promise.all([fetchAll('appointments'), fetchAll('patients'), loadSettings()]);
+    APPTS = a; PATS = Object.fromEntries(p.map(x=>[x.phone, x])); S = s;
+    render();
+  }catch(err){ toast('Impossible de charger les données. Vérifiez la connexion.'); }
 }
 function render(){
   const today = iso(new Date());
@@ -177,6 +203,11 @@ function render(){
   $('#stRewards').textContent = live.filter(a=>a.date>=today && a.status!=='done' && REWARDS[nextSession(PATS[a.phone])]).length;
   renderRdv(); renderPatients(); renderSettings();
 }
+/* re-draw without touching the settings form (she may be typing in it) */
+function refresh(){
+  const keepSettings = renderSettings; renderSettings = ()=>{}; render(); renderSettings = keepSettings;
+  if(openClient && $('#mPatient').classList.contains('open')) openPatient(openClient);
+}
 
 /* ---------- tabs ---------- */
 document.querySelector('.tabs').addEventListener('click', e=>{
@@ -186,6 +217,8 @@ document.querySelector('.tabs').addEventListener('click', e=>{
 });
 
 /* ---------- appointments ---------- */
+const waLink = (a, n, rw) => `https://wa.me/213${a.phone.slice(1)}?text=${encodeURIComponent(`Bonjour ${a.name}, votre rendez-vous chez Dr Akoubache Yasmine est confirmé le ${fmtLong(a.date)} à ${hh(a.time)}.${rw ? ` Ce sera votre ${ordTxt(n)} séance : ${rewardTxt(rw)}` : ''} À bientôt ♡`)}`;
+
 function renderRdv(){
   $('#rdvFilter').innerHTML = FILTERS.map(([k,l])=>`<button class="chip" data-f="${k}" aria-pressed="${filter===k}">${l}</button>`).join('');
   const today = iso(new Date());
@@ -195,14 +228,14 @@ function renderRdv(){
   else if(filter==='upcoming') L = L.filter(a=>a.date>=today && a.status!=='cancelled');
   else if(filter==='past') L = L.filter(a=>a.date<today);
   else if(filter.startsWith('d:')) L = L.filter(a=>a.date===filter.slice(2));
-  L.sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time) * (filter==='past'?-1:1));
+  L.sort((a,b)=>key(a).localeCompare(key(b)) * (filter==='past'||filter==='all'?-1:1));
 
   $('#rdvList').innerHTML = L.length ? L.map(a=>{
     const n = a.status==='done' ? a.session : nextSession(PATS[a.phone]), rw = n && REWARDS[n];
-    const wa = `https://wa.me/213${a.phone.slice(1)}?text=${encodeURIComponent(`Bonjour ${a.name}, votre rendez-vous chez Dr Akoubache Yasmine est confirmé le ${fmtLong(a.date)} à ${hh(a.time)}.${rw && a.status!=='done' ? ` Ce sera votre ${ordTxt(n)} séance : ${rewardTxt(rw)}` : ''} À bientôt ♡`)}`;
+    const active = a.status==='pending' || a.status==='confirmed';
     return `<div class="appt">
       <div class="when"><b>${hh(a.time)}</b><small>${fmtShort(a.date)}</small></div>
-      <div class="who"><b>${esc(a.name)}</b>
+      <div class="who"><b><button class="linkish" data-client="${a.phone}">${esc(a.name)}</button></b>
         <div><a href="tel:${esc(a.phone)}">${prettyPhone(esc(a.phone))}</a> · ${esc(a.service)}</div>
         ${a.note?`<div>« ${esc(a.note)} »</div>`:''}
         <div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">
@@ -212,10 +245,10 @@ function renderRdv(){
       <div><span class="tag ${ST[a.status][1]}">${ST[a.status][0]}</span></div>
       <div class="acts">
         ${a.status==='pending'?`<button class="btn small" data-act="confirm" data-id="${a.id}">Confirmer</button>`:''}
-        ${a.status==='pending'||a.status==='confirmed'?`<a class="btn small soft" href="${wa}" target="_blank" rel="noopener">WhatsApp</a>`:''}
-        ${a.status==='pending'||a.status==='confirmed'?`<button class="btn small soft" data-act="done" data-id="${a.id}">Séance faite · +1 tampon</button>`:''}
+        ${active?`<a class="btn small soft" href="${waLink(a,n,rw)}" target="_blank" rel="noopener">WhatsApp</a>`:''}
+        ${active?`<button class="btn small soft" data-act="done" data-id="${a.id}">Séance faite · +1 tampon</button>`:''}
         ${a.status==='done'?`<button class="btn small ghost" data-act="undo" data-id="${a.id}">Annuler le tampon</button>`:''}
-        ${a.status==='pending'||a.status==='confirmed'?`<button class="btn small ghost" data-act="cancel" data-id="${a.id}">Annuler</button>`:''}
+        ${active?`<button class="btn small ghost" data-act="cancel" data-id="${a.id}">Annuler</button>`:''}
         ${a.status==='cancelled'?`<button class="btn small ghost" data-act="del" data-id="${a.id}">Supprimer</button>`:''}
       </div></div>`;
   }).join('') : `<div class="sheet empty" style="text-align:center">Aucun rendez-vous ici.</div>`;
@@ -223,6 +256,10 @@ function renderRdv(){
 $('#rdvFilter').addEventListener('click', e=>{ const b=e.target.closest('[data-f]'); if(!b) return; filter=b.dataset.f; $('#rdvDate').value=''; renderRdv(); });
 $('#rdvDate').addEventListener('change', e=>{ filter = e.target.value ? 'd:'+e.target.value : 'today'; renderRdv(); });
 
+async function upd(id, patch){
+  const { error } = await sb.from('appointments').update(patch).eq('id', id); if(error) throw error;
+  const a = APPTS.find(x=>x.id===id); if(a) Object.assign(a, patch);
+}
 async function setStamps(phone, stamps, cards){
   const { error } = await sb.from('patients').update({stamps, cards}).eq('phone', phone);
   if(error) throw error;
@@ -231,17 +268,19 @@ async function setStamps(phone, stamps, cards){
 const plusOne  = p => p.stamps>=9 ? {stamps:1, cards:p.cards+1} : {stamps:p.stamps+1, cards:p.cards};
 const minusOne = p => p.stamps>0 ? {stamps:p.stamps-1, cards:p.cards} : (p.cards>0 ? {stamps:8, cards:p.cards-1} : {stamps:0, cards:0});
 
-$('#rdvList').addEventListener('click', async e=>{
+/* one handler for appointment actions, in the agenda AND in a client's page */
+async function apptAction(e){
   const b = e.target.closest('[data-act]'); if(!b) return;
   const a = APPTS.find(x=>x.id===b.dataset.id); if(!a) return;
   const act = b.dataset.act, p = PATS[a.phone];
-  b.closest('.appt').classList.add('loading');
+  if(act==='del' && !confirm('Supprimer ce rendez-vous ?')) return;
+  b.disabled = true;
   try{
     if(act==='confirm'){ await upd(a.id,{status:'confirmed'}); toast('Rendez-vous confirmé'); }
     if(act==='cancel'){ await upd(a.id,{status:'cancelled'}); toast('Rendez-vous annulé'); }
     if(act==='del'){
-      if(!confirm('Supprimer ce rendez-vous ?')) return b.closest('.appt').classList.remove('loading');
-      const { error } = await sb.from('appointments').delete().eq('id',a.id); if(error) throw error; toast('Rendez-vous supprimé');
+      const { error } = await sb.from('appointments').delete().eq('id',a.id); if(error) throw error;
+      APPTS = APPTS.filter(x=>x.id!==a.id); toast('Rendez-vous supprimé');
     }
     if(act==='done'){
       const n = nextSession(p), v = plusOne(p);
@@ -256,57 +295,125 @@ $('#rdvList').addEventListener('click', async e=>{
       await upd(a.id,{status:'confirmed', session:null});
       toast('Tampon retiré');
     }
-  }catch(err){ toast('Action impossible. Réessayez.'); }
-  await loadAll();
+  }catch(err){ toast('Action impossible. Réessayez.'); b.disabled = false; return; }
+  refresh();
+}
+$('#rdvList').addEventListener('click', e=>{
+  const c = e.target.closest('[data-client]'); if(c) return openPatient(c.dataset.client);
+  apptAction(e);
 });
-async function upd(id, patch){ const { error } = await sb.from('appointments').update(patch).eq('id', id); if(error) throw error; }
 
-/* ---------- patients ---------- */
+/* ---------- clients ---------- */
+function clientStats(phone){
+  const today = iso(new Date()), now = today + ' ' + toHM(new Date().getHours()*60 + new Date().getMinutes());
+  const mine = APPTS.filter(a=>a.phone===phone);
+  const upcoming = mine.filter(a=>(a.status==='pending'||a.status==='confirmed') && key(a) >= today).sort((a,b)=>key(a).localeCompare(key(b)));
+  const done = mine.filter(a=>a.status==='done').sort((a,b)=>key(b).localeCompare(key(a)));
+  return { mine, upcoming, next: upcoming[0], done, last: done[0], cancelled: mine.filter(a=>a.status==='cancelled').length };
+}
 function renderPatients(){
-  const q = ($('#patSearch').value||'').toLowerCase().trim(), qd = q.replace(/\D/g,'');
-  const L = Object.values(PATS).filter(p=>!q || p.name.toLowerCase().includes(q) || (qd && p.phone.includes(qd))).sort((a,b)=>a.name.localeCompare(b.name));
-  $('#patList').innerHTML = L.length ? L.map(p=>{
+  const q = ($('#patSearch').value||'').toLowerCase().trim(), qd = q.replace(/\D/g,''), sort = $('#patSort').value;
+  let L = Object.values(PATS).filter(p=>!q || p.name.toLowerCase().includes(q) || (qd && p.phone.includes(qd)))
+    .map(p=>({p, st:clientStats(p.phone)}));
+  const far = '9999', old = '0000';
+  if(sort==='az') L.sort((x,y)=>x.p.name.localeCompare(y.p.name));
+  if(sort==='next') L.sort((x,y)=>(x.st.next?key(x.st.next):far).localeCompare(y.st.next?key(y.st.next):far));
+  if(sort==='recent') L.sort((x,y)=>(y.st.last?key(y.st.last):old).localeCompare(x.st.last?key(x.st.last):old));
+  if(sort==='stamps') L.sort((x,y)=>(y.p.cards*9+y.p.stamps)-(x.p.cards*9+x.p.stamps));
+  const total = Object.keys(PATS).length;
+  $('#patCount').textContent = total ? (q ? `${L.length} sur ${total} clients` : `${total} client${total>1?'s':''}`) : '';
+  $('#patList').innerHTML = L.length ? L.map(({p, st})=>{
     const rw = REWARDS[nextSession(p)];
-    return `<button class="prow" data-ph="${p.phone}"><span><b>${esc(p.name)}</b><small>${prettyPhone(p.phone)}${p.cards?` · ${p.cards} carte${p.cards>1?'s':''} complétée${p.cards>1?'s':''}`:''}</small></span>
-      <span style="text-align:right"><span class="dots">${Array.from({length:9},(_,i)=>`<i class="${i<p.stamps?'on':''}"></i>`).join('')}</span>
-      ${rw?`<small style="color:var(--rose-deep);font-weight:700">Prochaine : ${rw.k==='gift'?'🎁 cadeau':rw.v}</small>`:''}</span></button>`;
-  }).join('') : `<div class="sheet empty" style="text-align:center">${q?'Aucun patient trouvé.':'Les patients apparaissent ici après leur premier rendez-vous.'}</div>`;
+    return `<button class="prow cl-row" data-ph="${p.phone}">
+      <span><b>${esc(p.name)}</b><small>${prettyPhone(p.phone)}</small>
+        ${st.next ? `<span class="nxt">Prochain RDV : ${fmtShort(st.next.date)} à ${hh(st.next.time)}${st.upcoming.length>1?` (+${st.upcoming.length-1})`:''}</span>`
+                  : `<span class="lst">${st.last ? `Dernière visite : ${fmtShort(st.last.date)}` : 'Pas encore de séance'}</span>`}</span>
+      <span class="right"><span class="dots">${Array.from({length:9},(_,i)=>`<i class="${i<p.stamps?'on':''}"></i>`).join('')}</span><br>
+        ${st.done.length} séance${st.done.length>1?'s':''} faite${st.done.length>1?'s':''}
+        ${rw?`<br><b style="color:var(--rose-deep)">Prochaine : ${rw.k==='gift'?'🎁 cadeau':rw.v}</b>`:''}</span>
+    </button>`;
+  }).join('') : `<div class="sheet empty" style="text-align:center">${q?'Aucun client trouvé.':'Les clients apparaissent ici après leur premier rendez-vous.'}</div>`;
 }
 $('#patSearch').addEventListener('input', renderPatients);
+$('#patSort').addEventListener('change', renderPatients);
 $('#patList').addEventListener('click', e=>{ const b=e.target.closest('[data-ph]'); if(b) openPatient(b.dataset.ph); });
+
 function openPatient(ph, animate=false){
   const p = PATS[ph]; if(!p) return;
-  const hist = APPTS.filter(a=>a.phone===ph).sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)).slice(0,6);
-  const lbl = {pending:'à confirmer',confirmed:'confirmé',done:'fait',cancelled:'annulé'};
-  $('#patBody').innerHTML = cardHTML(p,{animate}) + `<p class="fc-status">${statusLine(p)}</p>
+  openClient = ph;
+  const st = clientStats(ph), today = iso(new Date());
+  const all = st.mine.slice().sort((a,b)=>{
+    const au = a.date>=today && a.status!=='done' && a.status!=='cancelled', bu = b.date>=today && b.status!=='done' && b.status!=='cancelled';
+    if(au!==bu) return au ? -1 : 1;                         // upcoming first
+    return au ? key(a).localeCompare(key(b)) : key(b).localeCompare(key(a));
+  });
+  const wa = `https://wa.me/213${ph.slice(1)}?text=${encodeURIComponent(`Bonjour ${p.name}, `)}`;
+  $('#patBody').innerHTML = `
+    <div class="cl-head">
+      <div><h3>${esc(p.name)}</h3><div class="ph">${prettyPhone(ph)}${p.cards?` · ${p.cards} carte${p.cards>1?'s':''} complétée${p.cards>1?'s':''}`:''}</div></div>
+    </div>
+    <div class="cl-actions">
+      <button class="btn small" data-new="${ph}">Nouveau rendez-vous</button>
+      <a class="btn small soft" href="tel:${ph}">Appeler</a>
+      <a class="btn small soft" href="${wa}" target="_blank" rel="noopener">WhatsApp</a>
+    </div>
+    <div class="cl-stats">
+      <div><b>${st.done.length}</b><span>séances faites</span></div>
+      <div><b>${st.upcoming.length}</b><span>à venir</span></div>
+      <div><b>${st.cancelled}</b><span>annulés</span></div>
+    </div>
+    <div class="cl-sec">Rendez-vous</div>
+    <div class="hist">${all.length ? all.map(a=>{
+      const up = a.date>=today && (a.status==='pending'||a.status==='confirmed');
+      const n = a.status==='done' ? a.session : (up ? nextSession(p) : null), rw = n && REWARDS[n];
+      return `<div class="h ${up?'up':''}">
+        <div class="d"><b>${hh(a.time)}</b><small>${fmtShort(a.date)} ${fromIso(a.date).getFullYear()!==new Date().getFullYear()?fromIso(a.date).getFullYear():''}</small></div>
+        <div class="s">${esc(a.service)}${n?` · <span style="color:var(--rose-deep)">${ord(n)} séance${rw?` · ${rw.k==='gift'?'🎁':rw.v}`:''}</span>`:''}
+          ${a.note?`<small>« ${esc(a.note)} »</small>`:''}
+          ${up?`<div class="acts" style="border:0;padding:6px 0 0;margin:0;display:flex;gap:6px;flex-wrap:wrap">
+            ${a.status==='pending'?`<button class="btn small" data-act="confirm" data-id="${a.id}">Confirmer</button>`:''}
+            <button class="btn small soft" data-act="done" data-id="${a.id}">Séance faite</button>
+            <button class="btn small ghost" data-act="cancel" data-id="${a.id}">Annuler</button></div>`:''}
+        </div>
+        <div class="tags"><span class="tag ${ST[a.status][1]}">${ST[a.status][0]}</span></div>
+      </div>`;
+    }).join('') : '<div class="empty" style="padding:10px 0">Aucun rendez-vous.</div>'}</div>
+    <div class="cl-sec">Carte cadeaux</div>
+    ${cardHTML(p,{animate})}
+    <p class="fc-status">${statusLine(p)}</p>
     <div class="row" style="justify-content:center;margin-top:8px">
-      <button class="btn small ghost" data-st="-" data-ph="${p.phone}">Retirer un tampon</button>
-      <button class="btn small" data-st="+" data-ph="${p.phone}">Ajouter un tampon</button></div>
-    ${hist.length?`<h3 style="font-size:20px;margin-top:18px">Derniers rendez-vous</h3><div style="font-size:14px;color:var(--muted)">${hist.map(a=>`${fmtShort(a.date)} ${hh(a.time)} · ${esc(a.service)} · ${lbl[a.status]}`).join('<br>')}</div>`:''}`;
-  openM('mPatient');
+      <button class="btn small ghost" data-st="-" data-ph="${ph}">Retirer un tampon</button>
+      <button class="btn small" data-st="+" data-ph="${ph}">Ajouter un tampon</button></div>`;
+  if(!$('#mPatient').classList.contains('open')) openM('mPatient');
 }
 $('#patBody').addEventListener('click', async e=>{
+  const nw = e.target.closest('[data-new]');
+  if(nw){ const p = PATS[nw.dataset.new]; closeM(nw); return openAdd(p.name, p.phone); }
+  if(e.target.closest('[data-act]')) return apptAction(e);
   const b = e.target.closest('[data-st]'); if(!b) return;
   const p = PATS[b.dataset.ph], v = b.dataset.st==='+' ? plusOne(p) : minusOne(p);
   try{ await setStamps(p.phone, v.stamps, v.cards); }catch(err){ return toast('Action impossible. Réessayez.'); }
-  render(); openPatient(p.phone, b.dataset.st==='+');
+  refresh(); openPatient(p.phone, b.dataset.st==='+');
 });
 
 /* ---------- add appointment (phone bookings) ---------- */
-$('#addAppt').addEventListener('click', ()=>{
+function openAdd(name='', phone=''){
   $('#adSvc').innerHTML = SERVICES.map(s=>`<option>${s.n}</option>`).join('');
-  $('#adDate').value = iso(new Date()); $('#adTime').value=''; $('#adName').value=''; $('#adPhone').value=''; $('#adErr').textContent='';
-  openM('mAdd'); setTimeout(()=>$('#adName').focus(), 50);
-});
+  $('#adDate').value = iso(new Date()); $('#adTime').value=''; $('#adName').value=name; $('#adPhone').value=phone; $('#adErr').textContent='';
+  openM('mAdd'); setTimeout(()=>$(name ? '#adTime' : '#adName').focus(), 50);
+}
+$('#addAppt').addEventListener('click', ()=>openAdd());
 $('#adSave').addEventListener('click', async ()=>{
   const name=$('#adName').value.trim(), phone=normPhone($('#adPhone').value), date=$('#adDate').value, time=$('#adTime').value;
   if(name.length<2 || !/^0\d{8,9}$/.test(phone) || !date || !time) return $('#adErr').textContent='Remplissez le nom, un numéro valide, la date et l\'heure.';
   $('#adSave').disabled = true;
   const up = await sb.from('patients').upsert({phone, name}, {onConflict:'phone'});
-  const ins = up.error ? up : await sb.from('appointments').insert({name, phone, date, time, service:$('#adSvc').value, status:'confirmed'});
+  const ins = up.error ? up : await sb.from('appointments').insert({name, phone, date, time, service:$('#adSvc').value, status:'confirmed'}).select().single();
   $('#adSave').disabled = false;
   if(ins.error) return $('#adErr').textContent = ins.error.code==='23505' ? 'Il y a déjà un rendez-vous à cette heure.' : 'Ajout impossible. Réessayez.';
-  closeM($('#adSave')); toast('Rendez-vous ajouté'); await loadAll();
+  if(!PATS[phone]) PATS[phone] = {phone, name, stamps:0, cards:0}; else PATS[phone].name = name;
+  if(!APPTS.some(a=>a.id===ins.data.id)) APPTS.push(ins.data);
+  closeM($('#adSave')); toast('Rendez-vous ajouté'); refresh();
 });
 
 /* ---------- settings ---------- */
