@@ -46,12 +46,26 @@
       <div class="stat"><b id="stRewards">0</b><span>cadeaux à venir</span></div>
     </div>
     <div class="tabs" role="tablist">
-      <button role="tab" aria-selected="true" data-tab="tRdv">Rendez-vous</button>
+      <button role="tab" aria-selected="true" data-tab="tCal">Calendrier</button>
+      <button role="tab" aria-selected="false" data-tab="tRdv">Rendez-vous</button>
       <button role="tab" aria-selected="false" data-tab="tPat">Clients</button>
       <button role="tab" aria-selected="false" data-tab="tSet">Réglages</button>
     </div>
 
-    <div id="tRdv" class="tab">
+    <div id="tCal" class="tab">
+      <div class="cal-head">
+        <button class="cal-nav" id="calPrev" aria-label="Mois précédent">‹</button>
+        <h2 id="calTitle"></h2>
+        <button class="cal-nav" id="calNext" aria-label="Mois suivant">›</button>
+        <button class="btn small soft" id="calToday">Aujourd'hui</button>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="cal-legend"><span><i class="lg-pending"></i>À confirmer</span><span><i class="lg-confirmed"></i>Confirmé</span><span><i class="lg-done"></i>Séance faite</span><span><i class="lg-closed"></i>Fermé</span></div>
+      <div class="cal-dayhead"><div class="cl-sec" id="calDayTitle"></div><button class="btn small" id="calAdd">Ajouter ce jour-là</button></div>
+      <div class="list" id="calDayList"></div>
+    </div>
+
+    <div id="tRdv" class="tab" hidden>
       <div class="bar">
         <div class="chips" id="rdvFilter"></div>
         <input type="date" class="inp" id="rdvDate" aria-label="Choisir une date">
@@ -201,7 +215,7 @@ function render(){
   $('#stToday').textContent = live.filter(a=>a.date===today && a.status!=='done').length;
   $('#stPending').textContent = APPTS.filter(a=>a.status==='pending' && a.date>=today).length;
   $('#stRewards').textContent = live.filter(a=>a.date>=today && a.status!=='done' && REWARDS[nextSession(PATS[a.phone])]).length;
-  renderRdv(); renderPatients(); renderSettings();
+  renderCal(); renderRdv(); renderPatients(); renderSettings();
 }
 /* re-draw without touching the settings form (she may be typing in it) */
 function refresh(){
@@ -219,18 +233,7 @@ document.querySelector('.tabs').addEventListener('click', e=>{
 /* ---------- appointments ---------- */
 const waLink = (a, n, rw) => `https://wa.me/213${a.phone.slice(1)}?text=${encodeURIComponent(`Bonjour ${a.name}, votre rendez-vous chez Dr Akoubache Yasmine est confirmé le ${fmtLong(a.date)} à ${hh(a.time)}.${rw ? ` Ce sera votre ${ordTxt(n)} séance : ${rewardTxt(rw)}` : ''} À bientôt ♡`)}`;
 
-function renderRdv(){
-  $('#rdvFilter').innerHTML = FILTERS.map(([k,l])=>`<button class="chip" data-f="${k}" aria-pressed="${filter===k}">${l}</button>`).join('');
-  const today = iso(new Date());
-  let L = APPTS.slice();
-  if(filter==='today') L = L.filter(a=>a.date===today);
-  else if(filter==='pending') L = L.filter(a=>a.status==='pending' && a.date>=today);
-  else if(filter==='upcoming') L = L.filter(a=>a.date>=today && a.status!=='cancelled');
-  else if(filter==='past') L = L.filter(a=>a.date<today);
-  else if(filter.startsWith('d:')) L = L.filter(a=>a.date===filter.slice(2));
-  L.sort((a,b)=>key(a).localeCompare(key(b)) * (filter==='past'||filter==='all'?-1:1));
-
-  $('#rdvList').innerHTML = L.length ? L.map(a=>{
+function apptCard(a){
     const n = a.status==='done' ? a.session : nextSession(PATS[a.phone]), rw = n && REWARDS[n];
     const active = a.status==='pending' || a.status==='confirmed';
     return `<div class="appt">
@@ -251,7 +254,19 @@ function renderRdv(){
         ${active?`<button class="btn small ghost" data-act="cancel" data-id="${a.id}">Annuler</button>`:''}
         ${a.status==='cancelled'?`<button class="btn small ghost" data-act="del" data-id="${a.id}">Supprimer</button>`:''}
       </div></div>`;
-  }).join('') : `<div class="sheet empty" style="text-align:center">Aucun rendez-vous ici.</div>`;
+}
+function renderRdv(){
+  $('#rdvFilter').innerHTML = FILTERS.map(([k,l])=>`<button class="chip" data-f="${k}" aria-pressed="${filter===k}">${l}</button>`).join('');
+  const today = iso(new Date());
+  let L = APPTS.slice();
+  if(filter==='today') L = L.filter(a=>a.date===today);
+  else if(filter==='pending') L = L.filter(a=>a.status==='pending' && a.date>=today);
+  else if(filter==='upcoming') L = L.filter(a=>a.date>=today && a.status!=='cancelled');
+  else if(filter==='past') L = L.filter(a=>a.date<today);
+  else if(filter.startsWith('d:')) L = L.filter(a=>a.date===filter.slice(2));
+  L.sort((a,b)=>key(a).localeCompare(key(b)) * (filter==='past'||filter==='all'?-1:1));
+
+  $('#rdvList').innerHTML = L.length ? L.map(apptCard).join('') : `<div class="sheet empty" style="text-align:center">Aucun rendez-vous ici.</div>`;
 }
 $('#rdvFilter').addEventListener('click', e=>{ const b=e.target.closest('[data-f]'); if(!b) return; filter=b.dataset.f; $('#rdvDate').value=''; renderRdv(); });
 $('#rdvDate').addEventListener('change', e=>{ filter = e.target.value ? 'd:'+e.target.value : 'today'; renderRdv(); });
@@ -299,6 +314,50 @@ async function apptAction(e){
   refresh();
 }
 $('#rdvList').addEventListener('click', e=>{
+  const c = e.target.closest('[data-client]'); if(c) return openPatient(c.dataset.client);
+  apptAction(e);
+});
+
+
+/* ---------- calendar ---------- */
+let calMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1), calSel = iso(new Date());
+const WEEK = [6,0,1,2,3,4,5];                       // week starts on Saturday, like the Réglages
+const DN = {6:'Sam',0:'Dim',1:'Lun',2:'Mar',3:'Mer',4:'Jeu',5:'Ven'};
+function renderCal(){
+  const y = calMonth.getFullYear(), mo = calMonth.getMonth(), today = iso(new Date());
+  $('#calTitle').textContent = calMonth.toLocaleDateString('fr-FR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase());
+  const byDay = {};
+  APPTS.filter(a=>a.status!=='cancelled').forEach(a=>{ (byDay[a.date] ||= []).push(a); });
+  Object.values(byDay).forEach(l=>l.sort((a,b)=>a.time.localeCompare(b.time)));
+  const lead = WEEK.indexOf(new Date(y,mo,1).getDay());
+  let h = WEEK.map(d=>`<div class="cal-dn">${DN[d]}</div>`).join('');
+  for(let i=0;i<lead;i++) h += '<div class="cal-cell pad"></div>';
+  const days = new Date(y,mo+1,0).getDate();
+  for(let d=1; d<=days; d++){
+    const dt = new Date(y,mo,d), ds = iso(dt), L = byDay[ds] || [];
+    const closed = !S.days.includes(dt.getDay());
+    const cls = ['cal-cell', closed?'closed':'', ds===today?'today':'', ds===calSel?'sel':'', ds<today?'past':''].join(' ');
+    h += `<button class="${cls}" data-cal="${ds}" aria-label="${fmtLong(ds)} : ${L.length} rendez-vous">
+      <span class="cal-num">${d}</span>
+      <span class="cal-items">${L.slice(0,3).map(a=>`<span class="ci st-${a.status}">${hh(a.time)} ${esc(a.name.split(' ')[0])}</span>`).join('')}${L.length>3?`<span class="ci more">+${L.length-3}</span>`:''}</span>
+      ${L.length?`<span class="cal-count">${L.length}</span>`:''}
+    </button>`;
+  }
+  $('#calGrid').innerHTML = h;
+  renderCalDay();
+}
+function renderCalDay(){
+  const L = APPTS.filter(a=>a.date===calSel).sort((a,b)=>a.time.localeCompare(b.time));
+  const closed = !S.days.includes(fromIso(calSel).getDay());
+  $('#calDayTitle').textContent = fmtLong(calSel).replace(/^./,c=>c.toUpperCase()) + (closed ? ' · fermé' : '');
+  $('#calDayList').innerHTML = L.length ? L.map(apptCard).join('') : `<div class="sheet empty" style="text-align:center">Aucun rendez-vous ce jour-là.</div>`;
+}
+$('#calGrid').addEventListener('click', e=>{ const b=e.target.closest('[data-cal]'); if(!b) return; calSel=b.dataset.cal; renderCal(); });
+$('#calPrev').addEventListener('click', ()=>{ calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth()-1, 1); renderCal(); });
+$('#calNext').addEventListener('click', ()=>{ calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth()+1, 1); renderCal(); });
+$('#calToday').addEventListener('click', ()=>{ const t=new Date(); calMonth=new Date(t.getFullYear(),t.getMonth(),1); calSel=iso(t); renderCal(); });
+$('#calAdd').addEventListener('click', ()=>{ openAdd(); $('#adDate').value = calSel; });
+$('#calDayList').addEventListener('click', e=>{
   const c = e.target.closest('[data-client]'); if(c) return openPatient(c.dataset.client);
   apptAction(e);
 });
