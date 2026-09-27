@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dr Akoubache Yasmine · Dentiste</title>
+<meta name="description" content="Cabinet dentaire du Dr Akoubache Yasmine. Prenez rendez-vous en ligne et suivez votre carte cadeaux.">
+<meta name="theme-color" content="#FCF1EE">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦷</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Great+Vibes&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="#top">Dr Yasmine</a>
+  <nav>
+    <a href="#soins" class="hide-sm">Soins</a>
+    <a href="#rdv">Rendez-vous</a>
+    <a href="#carte">Ma carte</a>
+  </nav>
+</header>
+
+<div class="hero" id="top">
+  <div class="medallion" id="heroLogo" role="img" aria-label="Logo du cabinet du Dr Akoubache Yasmine"></div>
+  <div class="dname">Dr Akoubache Yasmine</div>
+  <div class="role">Dentiste</div>
+  <div class="rule">◆</div>
+  <div class="motto">Sourire<i>◆</i>Santé<i>◆</i>Confiance</div>
+  <div class="ctas">
+    <a class="btn" href="#rdv">Prendre rendez-vous</a>
+    <a class="btn soft" href="#carte">Voir ma carte cadeaux</a>
+  </div>
+  <div class="info" id="pubInfo"></div>
+</div>
+
+<section class="block" id="soins">
+  <div class="wrap">
+    <div class="sec-head"><div class="script">Nos soins</div><p>Des soins doux, pour toute la famille.</p></div>
+    <div class="svc" id="svcList"></div>
+  </div>
+</section>
+
+<section class="block" id="rdv">
+  <div class="wrap">
+    <div class="sec-head"><div class="script">Rendez-vous</div><p>Choisissez votre soin, votre jour et votre heure. Le cabinet vous confirme par téléphone.</p></div>
+    <div class="sheet">
+      <div class="step"><div class="step-t"><b>1</b><span>Quel soin ?</span></div><div class="chips" id="bkSvc"></div></div>
+      <div class="step"><div class="step-t"><b>2</b><span>Quel jour ?</span></div><div class="days" id="bkDays"></div></div>
+      <div class="step"><div class="step-t"><b>3</b><span>À quelle heure ?</span></div><div class="times" id="bkTimes"><div class="empty">Choisissez d'abord un jour.</div></div></div>
+      <div class="step" style="margin-bottom:0"><div class="step-t"><b>4</b><span>Vos coordonnées</span></div>
+        <div class="fields">
+          <label class="f">Nom et prénom<input class="inp" id="bkName" autocomplete="name" placeholder="Ex. Sara Benali"></label>
+          <label class="f">Téléphone<input class="inp" id="bkPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="05 55 12 34 56"></label>
+          <label class="f full">Un mot pour le docteur (facultatif)<textarea class="inp" id="bkNote" rows="2" maxlength="300" placeholder="Ex. douleur en bas à gauche depuis 2 jours"></textarea></label>
+        </div>
+        <div class="recap"><span id="bkRecap">Votre rendez-vous apparaîtra ici.</span><button class="btn" id="bkGo" disabled>Réserver</button></div>
+        <div class="err" id="bkErr"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="carte">
+  <div class="wrap">
+    <div class="sec-head"><div class="script">Carte cadeaux</div><p>Chaque séance ajoute un tampon. À la 3<sup>e</sup>, 5<sup>e</sup>, 6<sup>e</sup> et 9<sup>e</sup> séance, une surprise vous attend.</p></div>
+    <div class="lookup"><input class="inp" id="lkPhone" type="tel" inputmode="tel" placeholder="Votre numéro de téléphone"><button class="btn" id="lkGo">Voir ma carte</button></div>
+    <div id="lkOut"></div>
+  </div>
+</section>
+
+<footer>
+  <span class="script">À la prochaine ♡</span>
+  <div id="footInfo"></div>
+</footer>
+
+<div class="modal" id="mDone"><div class="box" style="text-align:center">
+  <div class="script" style="font-size:52px;line-height:1">Merci !</div>
+  <p id="doneTxt"></p>
+  <div class="row" style="justify-content:center"><button class="btn" data-close>Parfait</button></div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="shared.js"></script>
+<script>
+let S = DEFAULT_SETTINGS;
+const bk = {svc:null, date:null, time:null};
+const takenCache = {};   // date -> Set of times
+const ICON = `<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7.2 2.5c1.8 0 2.8.9 4.8.9s3-.9 4.8-.9c2.7 0 4.2 2.2 4.2 5 0 2.5-1 3.8-1.6 5.9-.7 2.4-.8 8.1-3.2 8.1-2 0-1.9-5.6-4.2-5.6s-2.2 5.6-4.2 5.6c-2.4 0-2.5-5.7-3.2-8.1C4 11.3 3 10 3 7.5c0-2.8 1.5-5 4.2-5z"/></svg>`;
+
+async function taken(dateStr, fresh=false){
+  if(!fresh && takenCache[dateStr]) return takenCache[dateStr];
+  const { data, error } = await sb.rpc('taken_slots', { p_date: dateStr });
+  takenCache[dateStr] = new Set(error ? [] : (data||[]).map(x => typeof x==='string' ? x : x.taken_slots));
+  return takenCache[dateStr];
+}
+
+function renderInfo(){
+  const bits = [], dn = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+  if(S.addr) bits.push(esc(S.addr));
+  if(S.phone) bits.push(`<a href="tel:${esc(normPhone(S.phone))}">${esc(S.phone)}</a>`);
+  bits.push(`${[6,0,1,2,3,4,5].filter(d=>S.days.includes(d)).map(d=>dn[d]).join(', ')} · ${hh(S.open)} à ${hh(S.close)}`);
+  $('#pubInfo').innerHTML = bits.join('<br>');
+  $('#footInfo').innerHTML = bits.join(' · ');
+}
+function renderSvc(){
+  $('#svcList').innerHTML = SERVICES.map(x=>`<div>${ICON}<span><h3>${x.n}</h3><p>${x.d}</p></span></div>`).join('');
+  $('#bkSvc').innerHTML = SERVICES.map(x=>`<button class="chip" aria-pressed="${bk.svc===x.n}" data-svc="${x.n}">${x.n}</button>`).join('');
+}
+function renderDays(){
+  const today = new Date(); let h = '';
+  for(let i=0;i<S.ahead;i++){
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate()+i), ds = iso(d);
+    const open = S.days.includes(d.getDay()) && slotList(S, ds, new Set()).some(x=>x.free);
+    h += `<button class="day" data-day="${ds}" aria-pressed="${bk.date===ds}" ${open?'':'disabled'}>
+      <small>${d.toLocaleDateString('fr-FR',{weekday:'short'})}</small><strong>${d.getDate()}</strong><small>${d.toLocaleDateString('fr-FR',{month:'short'})}</small></button>`;
+  }
+  $('#bkDays').innerHTML = h;
+}
+async function renderTimes(fresh=false){
+  if(!bk.date){ $('#bkTimes').innerHTML = '<div class="empty">Choisissez d\'abord un jour.</div>'; return; }
+  $('#bkTimes').classList.add('loading');
+  const sl = slotList(S, bk.date, await taken(bk.date, fresh));
+  $('#bkTimes').classList.remove('loading');
+  const anyFree = sl.some(x=>x.free);
+  $('#bkTimes').innerHTML = anyFree
+    ? sl.map(x=>`<button class="chip" data-time="${x.t}" aria-pressed="${bk.time===x.t}" ${x.free?'':'disabled'}>${hh(x.t)}</button>`).join('')
+    : '<div class="empty">Ce jour est complet. Choisissez un autre jour.</div>';
+}
+function renderRecap(){
+  const ok = bk.svc && bk.date && bk.time;
+  $('#bkRecap').innerHTML = ok ? `<b>${esc(bk.svc)}</b>, ${fmtLong(bk.date)} à ${hh(bk.time)}` : 'Votre rendez-vous apparaîtra ici.';
+  $('#bkGo').disabled = !ok;
+}
+
+$('#bkSvc').addEventListener('click', e=>{ const b=e.target.closest('[data-svc]'); if(!b) return; bk.svc=b.dataset.svc; renderSvc(); renderRecap(); });
+$('#bkDays').addEventListener('click', e=>{ const b=e.target.closest('[data-day]'); if(!b||b.disabled) return; bk.date=b.dataset.day; bk.time=null; renderDays(); renderTimes(); renderRecap(); });
+$('#bkTimes').addEventListener('click', e=>{ const b=e.target.closest('[data-time]'); if(!b||b.disabled) return; bk.time=b.dataset.time; renderTimes(); renderRecap(); });
+
+const ERRORS = {
+  slot_taken:'Ce créneau vient d\'être pris. Choisissez-en un autre.',
+  invalid_phone:'Numéro invalide. Exemple : 05 55 12 34 56',
+  invalid_name:'Écrivez votre nom et prénom.',
+  invalid_date:'Cette date n\'est pas disponible.',
+  too_many:'Vous avez déjà 3 rendez-vous à venir. Appelez le cabinet pour en ajouter.'
+};
+$('#bkGo').addEventListener('click', async ()=>{
+  const name = $('#bkName').value.trim(), phone = normPhone($('#bkPhone').value);
+  $('#bkErr').textContent = '';
+  if(name.length<2) return $('#bkErr').textContent = ERRORS.invalid_name;
+  if(!/^0[5-7]\d{8}$|^0[1-4]\d{7,8}$/.test(phone)) return $('#bkErr').textContent = ERRORS.invalid_phone;
+  const btn = $('#bkGo'); btn.disabled = true; btn.textContent = 'Envoi…';
+  const { data, error } = await sb.rpc('book_appointment', {
+    p_name:name, p_phone:phone, p_date:bk.date, p_time:bk.time, p_service:bk.svc, p_note:$('#bkNote').value.trim()
+  });
+  btn.textContent = 'Réserver';
+  if(error){
+    const key = Object.keys(ERRORS).find(k => (error.message||'').includes(k));
+    $('#bkErr').textContent = key ? ERRORS[key] : 'La réservation n\'a pas pu être envoyée. Vérifiez votre connexion et réessayez.';
+    if(key==='slot_taken'){ bk.time=null; await renderTimes(true); }
+    renderRecap(); return;
+  }
+  const n = data?.next_session || 1, rw = REWARDS[n];
+  $('#doneTxt').innerHTML = `Votre demande pour <b>${esc(bk.svc)}</b> le <b>${fmtLong(bk.date)} à ${hh(bk.time)}</b> est envoyée. Le cabinet vous appelle pour confirmer.`
+    + (rw ? `<br><br><b style="color:var(--rose-deep)">Ce sera votre ${ord(n)} séance : ${rewardTxt(rw)}</b>` : '');
+  openM('mDone');
+  delete takenCache[bk.date];
+  bk.svc = bk.date = bk.time = null;
+  $('#bkName').value = $('#bkPhone').value = $('#bkNote').value = '';
+  $('#lkPhone').value = phone;
+  renderSvc(); renderDays(); renderTimes(); renderRecap(); showCard(false);
+});
+
+async function showCard(animate=true){
+  const ph = normPhone($('#lkPhone').value);
+  if(!ph){ $('#lkOut').innerHTML = ''; return; }
+  $('#lkOut').innerHTML = '<p class="fc-status"><small>Chargement…</small></p>';
+  const { data, error } = await sb.rpc('get_card', { p_phone: ph });
+  const row = !error && data && data[0];
+  if(!row){ $('#lkOut').innerHTML = `<p class="fc-status">Aucune carte pour ce numéro.<small>Votre carte est créée à votre premier rendez-vous.</small></p>`; return; }
+  const p = {name:row.first_name, stamps:row.stamps, cards:row.cards};
+  $('#lkOut').innerHTML = cardHTML(p,{animate}) + `<p class="fc-status">${statusLine(p)}</p>`;
+}
+$('#lkGo').addEventListener('click', ()=>showCard(true));
+$('#lkPhone').addEventListener('keydown', e=>{ if(e.key==='Enter') showCard(true); });
+
+(async function boot(){
+  $('#heroLogo').innerHTML = logoSVG();
+  renderSvc(); renderInfo(); renderDays(); renderRecap();
+  S = await loadSettings();
+  renderInfo(); renderDays();
+})();
+</script>
+</body>
+</html>

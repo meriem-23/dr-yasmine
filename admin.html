@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Espace dentiste · Dr Yasmine</title>
+<meta name="theme-color" content="#FCF1EE">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦷</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Great+Vibes&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div class="login" id="login" hidden>
+  <div class="sheet">
+    <div class="medallion" id="loginLogo"></div>
+    <div class="script">Espace dentiste</div>
+    <form id="loginForm">
+      <label class="f">E-mail<input class="inp" id="lgEmail" type="email" autocomplete="username" required></label>
+      <label class="f">Mot de passe<input class="inp" id="lgPass" type="password" autocomplete="current-password" required></label>
+      <button class="btn" type="submit" id="lgBtn">Se connecter</button>
+      <div class="err" id="lgErr"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ============ DASHBOARD ============ -->
+<div id="dash" hidden>
+  <div class="wrap">
+    <div class="dash-top">
+      <div><div class="script">Bonjour Dr Yasmine</div><h1 id="dashDate"></h1></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn small" id="addAppt">Ajouter un rendez-vous</button>
+        <a class="btn small soft" href="index.html" target="_blank" rel="noopener">Voir le site</a>
+        <button class="btn small ghost" id="logout">Se déconnecter</button>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="stToday">0</b><span>aujourd'hui</span></div>
+      <div class="stat"><b id="stPending">0</b><span>à confirmer</span></div>
+      <div class="stat"><b id="stRewards">0</b><span>cadeaux à venir</span></div>
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="tRdv">Rendez-vous</button>
+      <button role="tab" aria-selected="false" data-tab="tPat">Patients</button>
+      <button role="tab" aria-selected="false" data-tab="tSet">Réglages</button>
+    </div>
+
+    <div id="tRdv" class="tab">
+      <div class="bar">
+        <div class="chips" id="rdvFilter"></div>
+        <input type="date" class="inp" id="rdvDate" aria-label="Choisir une date">
+      </div>
+      <div class="list" id="rdvList"></div>
+    </div>
+
+    <div id="tPat" class="tab" hidden>
+      <div class="bar"><input class="inp" id="patSearch" placeholder="Chercher un nom ou un numéro" style="flex:1;min-width:200px"></div>
+      <div class="list" id="patList"></div>
+    </div>
+
+    <div id="tSet" class="tab" hidden>
+      <div class="sheet set">
+        <div><h3>Jours d'ouverture</h3><div class="wk" id="setDays"></div></div>
+        <div class="fields">
+          <label class="f">Ouverture<input type="time" class="inp" id="setOpen"></label>
+          <label class="f">Fermeture<input type="time" class="inp" id="setClose"></label>
+          <label class="f">Pause de<input type="time" class="inp" id="setBreakA"></label>
+          <label class="f">à<input type="time" class="inp" id="setBreakB"></label>
+          <label class="f">Durée d'un rendez-vous
+            <select class="inp" id="setSlot"><option value="15">15 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="45">45 min</option><option value="60">1 heure</option></select></label>
+          <label class="f">Réservation jusqu'à
+            <select class="inp" id="setAhead"><option value="7">1 semaine</option><option value="14">2 semaines</option><option value="21">3 semaines</option><option value="30">1 mois</option></select></label>
+          <label class="f">Téléphone du cabinet<input class="inp" id="setPhone" placeholder="0X XX XX XX XX"></label>
+          <label class="f">Adresse<input class="inp" id="setAddr" placeholder="Rue, ville"></label>
+        </div>
+        <div><button class="btn" id="setSave">Enregistrer</button></div>
+      </div>
+    </div>
+    <div style="height:50px"></div>
+  </div>
+</div>
+
+<div class="modal" id="mPatient"><div class="box">
+  <div id="patBody"></div>
+  <div class="row"><button class="btn ghost small" data-close>Fermer</button></div>
+</div></div>
+
+<div class="modal" id="mAdd"><div class="box">
+  <h3>Nouveau rendez-vous</h3>
+  <div class="fields">
+    <label class="f">Nom et prénom<input class="inp" id="adName"></label>
+    <label class="f">Téléphone<input class="inp" id="adPhone" type="tel"></label>
+    <label class="f">Date<input class="inp" id="adDate" type="date"></label>
+    <label class="f">Heure<input class="inp" id="adTime" type="time"></label>
+    <label class="f full">Soin<select class="inp" id="adSvc"></select></label>
+  </div>
+  <div class="err" id="adErr"></div>
+  <div class="row"><button class="btn ghost small" data-close>Annuler</button><button class="btn small" id="adSave">Ajouter</button></div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="shared.js"></script>
+<script>
+let S = DEFAULT_SETTINGS, APPTS = [], PATS = {}, filter = 'today', channel = null;
+const ST = {pending:['À confirmer','t-pending'],confirmed:['Confirmé','t-confirmed'],done:['Séance faite','t-done'],cancelled:['Annulé','t-cancelled']};
+const FILTERS = [['today',"Aujourd'hui"],['pending','À confirmer'],['upcoming','À venir'],['past','Passés'],['all','Tous']];
+
+/* ---------- auth ---------- */
+$('#loginLogo').innerHTML = logoSVG();
+$('#loginForm').addEventListener('submit', async e=>{
+  e.preventDefault();
+  $('#lgErr').textContent=''; $('#lgBtn').disabled=true; $('#lgBtn').textContent='Connexion…';
+  const { error } = await sb.auth.signInWithPassword({ email:$('#lgEmail').value.trim(), password:$('#lgPass').value });
+  $('#lgBtn').disabled=false; $('#lgBtn').textContent='Se connecter';
+  if(error) $('#lgErr').textContent = 'E-mail ou mot de passe incorrect.';
+});
+$('#logout').addEventListener('click', async ()=>{ await sb.auth.signOut(); });
+
+let started = false;
+sb.auth.onAuthStateChange((evt, session)=>{
+  // defer: supabase calls must not run inside this callback
+  setTimeout(()=>{
+    if(session && !started){ started = true; start(); }
+    else if(!session){ started = false; showLogin(); }
+  }, 0);
+});
+
+function showLogin(){
+  $('#login').hidden = false; $('#dash').hidden = true;
+  if(channel){ sb.removeChannel(channel); channel = null; }
+}
+async function start(){
+  const { data: isAdmin } = await sb.rpc('is_admin');
+  if(!isAdmin){
+    await sb.auth.signOut(); started = false;
+    $('#lgErr').textContent = 'Ce compte n\'a pas accès à l\'espace dentiste.';
+    return;
+  }
+  $('#login').hidden = true; $('#dash').hidden = false;
+  await loadAll();
+  if(!channel){
+    channel = sb.channel('rdv')
+      .on('postgres_changes', {event:'*', schema:'public', table:'appointments'}, async payload=>{
+        if(payload.eventType==='INSERT' && payload.new.status==='pending')
+          toast(`Nouveau rendez-vous : ${payload.new.name}, ${fmtShort(payload.new.date)} à ${hh(payload.new.time)}`);
+        await loadAll();
+      }).subscribe();
+  }
+}
+
+/* ---------- data ---------- */
+async function loadAll(){
+  const since = iso(new Date(Date.now() - 1000*60*60*24*120));
+  const [a, p, s] = await Promise.all([
+    sb.from('appointments').select('*').gte('date', since).order('date').order('time'),
+    sb.from('patients').select('*'),
+    loadSettings()
+  ]);
+  if(a.error || p.error){ toast('Impossible de charger les données. Vérifiez la connexion.'); return; }
+  APPTS = a.data; PATS = Object.fromEntries(p.data.map(x=>[x.phone, x])); S = s;
+  render();
+}
+function render(){
+  const today = iso(new Date());
+  $('#dashDate').textContent = fmtLong(today).replace(/^./, c=>c.toUpperCase());
+  const live = APPTS.filter(a=>a.status!=='cancelled');
+  $('#stToday').textContent = live.filter(a=>a.date===today && a.status!=='done').length;
+  $('#stPending').textContent = APPTS.filter(a=>a.status==='pending' && a.date>=today).length;
+  $('#stRewards').textContent = live.filter(a=>a.date>=today && a.status!=='done' && REWARDS[nextSession(PATS[a.phone])]).length;
+  renderRdv(); renderPatients(); renderSettings();
+}
+
+/* ---------- tabs ---------- */
+document.querySelector('.tabs').addEventListener('click', e=>{
+  const b = e.target.closest('[data-tab]'); if(!b) return;
+  document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected', x===b));
+  document.querySelectorAll('.tab').forEach(t=>t.hidden = t.id!==b.dataset.tab);
+});
+
+/* ---------- appointments ---------- */
+function renderRdv(){
+  $('#rdvFilter').innerHTML = FILTERS.map(([k,l])=>`<button class="chip" data-f="${k}" aria-pressed="${filter===k}">${l}</button>`).join('');
+  const today = iso(new Date());
+  let L = APPTS.slice();
+  if(filter==='today') L = L.filter(a=>a.date===today);
+  else if(filter==='pending') L = L.filter(a=>a.status==='pending' && a.date>=today);
+  else if(filter==='upcoming') L = L.filter(a=>a.date>=today && a.status!=='cancelled');
+  else if(filter==='past') L = L.filter(a=>a.date<today);
+  else if(filter.startsWith('d:')) L = L.filter(a=>a.date===filter.slice(2));
+  L.sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time) * (filter==='past'?-1:1));
+
+  $('#rdvList').innerHTML = L.length ? L.map(a=>{
+    const n = a.status==='done' ? a.session : nextSession(PATS[a.phone]), rw = n && REWARDS[n];
+    const wa = `https://wa.me/213${a.phone.slice(1)}?text=${encodeURIComponent(`Bonjour ${a.name}, votre rendez-vous chez Dr Akoubache Yasmine est confirmé le ${fmtLong(a.date)} à ${hh(a.time)}.${rw && a.status!=='done' ? ` Ce sera votre ${ordTxt(n)} séance : ${rewardTxt(rw)}` : ''} À bientôt ♡`)}`;
+    return `<div class="appt">
+      <div class="when"><b>${hh(a.time)}</b><small>${fmtShort(a.date)}</small></div>
+      <div class="who"><b>${esc(a.name)}</b>
+        <div><a href="tel:${esc(a.phone)}">${prettyPhone(esc(a.phone))}</a> · ${esc(a.service)}</div>
+        ${a.note?`<div>« ${esc(a.note)} »</div>`:''}
+        <div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">
+          ${n?`<span class="tag t-seance">${ord(n)} séance</span>`:''}
+          ${rw && a.status!=='cancelled'?`<span class="tag t-reward">${rw.k==='gift'?'🎁 Cadeau':rw.v}</span>`:''}
+        </div></div>
+      <div><span class="tag ${ST[a.status][1]}">${ST[a.status][0]}</span></div>
+      <div class="acts">
+        ${a.status==='pending'?`<button class="btn small" data-act="confirm" data-id="${a.id}">Confirmer</button>`:''}
+        ${a.status==='pending'||a.status==='confirmed'?`<a class="btn small soft" href="${wa}" target="_blank" rel="noopener">WhatsApp</a>`:''}
+        ${a.status==='pending'||a.status==='confirmed'?`<button class="btn small soft" data-act="done" data-id="${a.id}">Séance faite · +1 tampon</button>`:''}
+        ${a.status==='done'?`<button class="btn small ghost" data-act="undo" data-id="${a.id}">Annuler le tampon</button>`:''}
+        ${a.status==='pending'||a.status==='confirmed'?`<button class="btn small ghost" data-act="cancel" data-id="${a.id}">Annuler</button>`:''}
+        ${a.status==='cancelled'?`<button class="btn small ghost" data-act="del" data-id="${a.id}">Supprimer</button>`:''}
+      </div></div>`;
+  }).join('') : `<div class="sheet empty" style="text-align:center">Aucun rendez-vous ici.</div>`;
+}
+$('#rdvFilter').addEventListener('click', e=>{ const b=e.target.closest('[data-f]'); if(!b) return; filter=b.dataset.f; $('#rdvDate').value=''; renderRdv(); });
+$('#rdvDate').addEventListener('change', e=>{ filter = e.target.value ? 'd:'+e.target.value : 'today'; renderRdv(); });
+
+async function setStamps(phone, stamps, cards){
+  const { error } = await sb.from('patients').update({stamps, cards}).eq('phone', phone);
+  if(error) throw error;
+  PATS[phone].stamps = stamps; PATS[phone].cards = cards;
+}
+const plusOne  = p => p.stamps>=9 ? {stamps:1, cards:p.cards+1} : {stamps:p.stamps+1, cards:p.cards};
+const minusOne = p => p.stamps>0 ? {stamps:p.stamps-1, cards:p.cards} : (p.cards>0 ? {stamps:8, cards:p.cards-1} : {stamps:0, cards:0});
+
+$('#rdvList').addEventListener('click', async e=>{
+  const b = e.target.closest('[data-act]'); if(!b) return;
+  const a = APPTS.find(x=>x.id===b.dataset.id); if(!a) return;
+  const act = b.dataset.act, p = PATS[a.phone];
+  b.closest('.appt').classList.add('loading');
+  try{
+    if(act==='confirm'){ await upd(a.id,{status:'confirmed'}); toast('Rendez-vous confirmé'); }
+    if(act==='cancel'){ await upd(a.id,{status:'cancelled'}); toast('Rendez-vous annulé'); }
+    if(act==='del'){
+      if(!confirm('Supprimer ce rendez-vous ?')) return b.closest('.appt').classList.remove('loading');
+      const { error } = await sb.from('appointments').delete().eq('id',a.id); if(error) throw error; toast('Rendez-vous supprimé');
+    }
+    if(act==='done'){
+      const n = nextSession(p), v = plusOne(p);
+      await setStamps(a.phone, v.stamps, v.cards);
+      await upd(a.id,{status:'done', session:n});
+      const rw = REWARDS[n];
+      toast(rw ? `${ordTxt(n)} séance : appliquez ${rw.k==='gift'?'le cadeau 🎁':rw.v} ✨` : `Tampon ajouté · ${v.stamps}/9`);
+    }
+    if(act==='undo'){
+      const v = minusOne(p);
+      await setStamps(a.phone, v.stamps, v.cards);
+      await upd(a.id,{status:'confirmed', session:null});
+      toast('Tampon retiré');
+    }
+  }catch(err){ toast('Action impossible. Réessayez.'); }
+  await loadAll();
+});
+async function upd(id, patch){ const { error } = await sb.from('appointments').update(patch).eq('id', id); if(error) throw error; }
+
+/* ---------- patients ---------- */
+function renderPatients(){
+  const q = ($('#patSearch').value||'').toLowerCase().trim(), qd = q.replace(/\D/g,'');
+  const L = Object.values(PATS).filter(p=>!q || p.name.toLowerCase().includes(q) || (qd && p.phone.includes(qd))).sort((a,b)=>a.name.localeCompare(b.name));
+  $('#patList').innerHTML = L.length ? L.map(p=>{
+    const rw = REWARDS[nextSession(p)];
+    return `<button class="prow" data-ph="${p.phone}"><span><b>${esc(p.name)}</b><small>${prettyPhone(p.phone)}${p.cards?` · ${p.cards} carte${p.cards>1?'s':''} complétée${p.cards>1?'s':''}`:''}</small></span>
+      <span style="text-align:right"><span class="dots">${Array.from({length:9},(_,i)=>`<i class="${i<p.stamps?'on':''}"></i>`).join('')}</span>
+      ${rw?`<small style="color:var(--rose-deep);font-weight:700">Prochaine : ${rw.k==='gift'?'🎁 cadeau':rw.v}</small>`:''}</span></button>`;
+  }).join('') : `<div class="sheet empty" style="text-align:center">${q?'Aucun patient trouvé.':'Les patients apparaissent ici après leur premier rendez-vous.'}</div>`;
+}
+$('#patSearch').addEventListener('input', renderPatients);
+$('#patList').addEventListener('click', e=>{ const b=e.target.closest('[data-ph]'); if(b) openPatient(b.dataset.ph); });
+function openPatient(ph, animate=false){
+  const p = PATS[ph]; if(!p) return;
+  const hist = APPTS.filter(a=>a.phone===ph).sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)).slice(0,6);
+  const lbl = {pending:'à confirmer',confirmed:'confirmé',done:'fait',cancelled:'annulé'};
+  $('#patBody').innerHTML = cardHTML(p,{animate}) + `<p class="fc-status">${statusLine(p)}</p>
+    <div class="row" style="justify-content:center;margin-top:8px">
+      <button class="btn small ghost" data-st="-" data-ph="${p.phone}">Retirer un tampon</button>
+      <button class="btn small" data-st="+" data-ph="${p.phone}">Ajouter un tampon</button></div>
+    ${hist.length?`<h3 style="font-size:20px;margin-top:18px">Derniers rendez-vous</h3><div style="font-size:14px;color:var(--muted)">${hist.map(a=>`${fmtShort(a.date)} ${hh(a.time)} · ${esc(a.service)} · ${lbl[a.status]}`).join('<br>')}</div>`:''}`;
+  openM('mPatient');
+}
+$('#patBody').addEventListener('click', async e=>{
+  const b = e.target.closest('[data-st]'); if(!b) return;
+  const p = PATS[b.dataset.ph], v = b.dataset.st==='+' ? plusOne(p) : minusOne(p);
+  try{ await setStamps(p.phone, v.stamps, v.cards); }catch(err){ return toast('Action impossible. Réessayez.'); }
+  render(); openPatient(p.phone, b.dataset.st==='+');
+});
+
+/* ---------- add appointment (phone bookings) ---------- */
+$('#addAppt').addEventListener('click', ()=>{
+  $('#adSvc').innerHTML = SERVICES.map(s=>`<option>${s.n}</option>`).join('');
+  $('#adDate').value = iso(new Date()); $('#adTime').value=''; $('#adName').value=''; $('#adPhone').value=''; $('#adErr').textContent='';
+  openM('mAdd'); setTimeout(()=>$('#adName').focus(), 50);
+});
+$('#adSave').addEventListener('click', async ()=>{
+  const name=$('#adName').value.trim(), phone=normPhone($('#adPhone').value), date=$('#adDate').value, time=$('#adTime').value;
+  if(name.length<2 || !/^0\d{8,9}$/.test(phone) || !date || !time) return $('#adErr').textContent='Remplissez le nom, un numéro valide, la date et l\'heure.';
+  $('#adSave').disabled = true;
+  const up = await sb.from('patients').upsert({phone, name}, {onConflict:'phone'});
+  const ins = up.error ? up : await sb.from('appointments').insert({name, phone, date, time, service:$('#adSvc').value, status:'confirmed'});
+  $('#adSave').disabled = false;
+  if(ins.error) return $('#adErr').textContent = ins.error.code==='23505' ? 'Il y a déjà un rendez-vous à cette heure.' : 'Ajout impossible. Réessayez.';
+  closeM($('#adSave')); toast('Rendez-vous ajouté'); await loadAll();
+});
+
+/* ---------- settings ---------- */
+function renderSettings(){
+  const dn = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+  $('#setDays').innerHTML = [6,0,1,2,3,4,5].map(d=>`<button class="chip" data-wd="${d}" aria-pressed="${S.days.includes(d)}">${dn[d]}</button>`).join('');
+  $('#setOpen').value=S.open; $('#setClose').value=S.close; $('#setBreakA').value=S.breakA; $('#setBreakB').value=S.breakB;
+  $('#setSlot').value=S.slot; $('#setAhead').value=S.ahead; $('#setPhone').value=S.phone; $('#setAddr').value=S.addr;
+}
+$('#setDays').addEventListener('click', e=>{ const b=e.target.closest('[data-wd]'); if(b) b.setAttribute('aria-pressed', b.getAttribute('aria-pressed')!=='true'); });
+$('#setSave').addEventListener('click', async ()=>{
+  const data = {
+    days:[...document.querySelectorAll('#setDays [aria-pressed="true"]')].map(b=>+b.dataset.wd),
+    open:$('#setOpen').value||S.open, close:$('#setClose').value||S.close,
+    breakA:$('#setBreakA').value, breakB:$('#setBreakB').value,
+    slot:+$('#setSlot').value, ahead:+$('#setAhead').value,
+    phone:$('#setPhone').value.trim(), addr:$('#setAddr').value.trim()
+  };
+  const { error } = await sb.from('settings').update({data}).eq('id',1);
+  if(error) return toast('Enregistrement impossible. Réessayez.');
+  S = data; toast('Réglages enregistrés');
+});
+</script>
+</body>
+</html>
